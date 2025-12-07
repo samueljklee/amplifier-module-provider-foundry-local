@@ -1,0 +1,35 @@
+[project]
+name = "amplifier-module-provider-foundry-local"
+version = "1.0.0"
+description = "Foundry Local provider module - Microsoft Foundry Local integration for Amplifier with privacy-first AI, audio transcription, and hardware optimization"
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Microsoft MADE:Explorations Team" },
+]
+dependencies = [
+    "foundry-local>=0.0.1",
+    "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+foundry = [
+    # Microsoft Foundry Local SDK - not published to PyPI yet
+    # Install from Microsoft's private feed when available
+]
+
+[project.entry-points."amplifier.modules"]
+provider-foundry-local = "amplifier_module_provider_foundry_local:mount"
+
+[build-system]
+requires = [
+    "setuptools>=45",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+asyncio_mode = "strict"
