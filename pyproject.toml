@@ -11,7 +11,7 @@ authors = [
 dependencies = [
     "foundry-local>=0.0.1",
     "openai>=1.0.0",
-    "aiohttp>=3.8.0",
+    "requests>=2.25.0",
 ]
 
 [project.optional-dependencies]

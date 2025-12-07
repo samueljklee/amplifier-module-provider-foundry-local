@@ -405,22 +405,25 @@ class FoundryLocalProvider:
     def _test_endpoint_connectivity(self, endpoint: str):
         """Test if Foundry Local endpoint is accessible."""
         try:
-            import aiohttp
-            import asyncio
+            # Use synchronous requests for simpler connectivity test
+            import requests
 
-            async def test_connection():
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"{endpoint}/models", timeout=5) as response:
-                        if response.status == 200:
-                            models_data = await response.json()
-                            model_count = len(models_data.get('data', []))
-                            logger.info(f"✅ Foundry Local endpoint verified - {model_count} models available")
-                        else:
-                            logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status}")
-            # Run the test without blocking
-            asyncio.create_task(test_connection())
-        except Exception as e:
-            logger.warning(f"⚠️  Could not test Foundry Local endpoint connectivity: {e}")
+            try:
+                response = requests.get(endpoint, timeout=10)
+                if response.status == 200:
+                    logger.info(f"✅ Foundry Local endpoint connectivity verified: {response.status} OK")
+                else:
+                    logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status}")
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"⚠️  Foundry Local server not reachable at {endpoint}")
+            except requests.exceptions.Timeout:
+                logger.warning(f"⚠️  Foundry Local endpoint timeout (10s) at {endpoint}")
+            except Exception as e:
+                logger.warning(f"⚠️  Foundry Local endpoint test failed: {e}")
+
+        except ImportError:
+            # If requests not available, skip connectivity test
+            logger.info("ℹ️  requests not available for connectivity test")
 
     def _resolve_model_alias_to_id(self, model_alias: str) -> str:
         """Resolve model alias to full Foundry Local model ID.
