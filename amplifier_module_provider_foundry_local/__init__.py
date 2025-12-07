@@ -31,12 +31,14 @@ from ._constants import DEFAULT_TIMEOUT
 from ._constants import DEFAULT_TEMPERATURE
 
 # Import Foundry Local SDK - this is the official Microsoft approach
+# Note: SDK not yet available, using CLI approach instead
 try:
     from foundry_local import FoundryLocalManager
     FOUNDRY_LOCAL_SDK_AVAILABLE = True
 except ImportError:
     FoundryLocalManager = None
     FOUNDRY_LOCAL_SDK_AVAILABLE = False
+    logger.info("FoundryLocalManager SDK not available - using CLI discovery instead")
 
 logger = logging.getLogger(__name__)
 
@@ -380,26 +382,39 @@ class FoundryLocalProvider:
             raise
 
     def _discover_foundry_endpoint(self) -> str:
-        """Discover Foundry Local endpoint dynamically."""
-        # Try FoundryLocalManager first if available
-        if self.manager and hasattr(self.manager, 'endpoint'):
-            endpoint = self.manager.endpoint.rstrip('/') + '/openai'
-            logger.info(f"✅ Foundry Local endpoint discovered via SDK: {endpoint}")
-            return endpoint
-
-        # Use configured base_url if provided
+        """Discover Foundry Local endpoint using CLI or configuration."""
+        # Use configured base_url if provided (highest priority)
         if "base_url" in self.config:
             endpoint = self.config["base_url"].rstrip('/')
             logger.info(f"✅ Using configured Foundry Local endpoint: {endpoint}")
             return endpoint
 
-        # Default fallback
-        default_endpoint = "http://127.0.0.1:65320/v1"
-        if not hasattr(self, '_endpoint_warning_shown'):
-            logger.warning(f"⚠️  Could not auto-detect Foundry Local endpoint, using default: {default_endpoint}")
-            self._endpoint_warning_shown = True
-        else:
-            logger.info(f"ℹ️  Using default Foundry Local endpoint: {default_endpoint}")
+        # Try to discover via Foundry CLI
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["foundry", "service", "status"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and "running on" in result.stdout:
+                # Extract endpoint from CLI output
+                # Example: "Model management service is running on http://127.0.0.1:65320/openai/status"
+                status_line = result.stdout.strip()
+                endpoint_start = status_line.find("http://")
+                if endpoint_start != -1:
+                    # Extract full endpoint and remove /status
+                    full_endpoint = status_line[endpoint_start:]
+                    endpoint = full_endpoint.replace("/status", "")
+                    logger.info(f"✅ Foundry Local endpoint discovered via CLI: {endpoint}")
+                    return endpoint
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError) as e:
+            logger.debug(f"CLI endpoint discovery failed: {e}")
+
+        # Default fallback - use standard Foundry Local endpoint
+        default_endpoint = "http://127.0.0.1:65320/openai"
+        logger.info(f"ℹ️  Using default Foundry Local endpoint: {default_endpoint}")
         return default_endpoint
 
     def _test_endpoint_connectivity(self, endpoint: str):
@@ -409,8 +424,8 @@ class FoundryLocalProvider:
             import requests
 
             try:
-                # Test the models endpoint which should exist for OpenAI-compatible APIs
-                test_url = f"{endpoint.rstrip('/')}/models"
+                # Test the status endpoint which is the standard Foundry Local health check
+                test_url = f"{endpoint.rstrip('/')}/status"
                 response = requests.get(test_url, timeout=10)
                 if response.status_code == 200:
                     logger.info(f"✅ Foundry Local endpoint connectivity verified: {test_url} {response.status_code} OK")
