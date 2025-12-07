@@ -107,9 +107,13 @@ class FoundryLocalProvider:
             api_key = "foundry-local-key"  # Not required but OpenAI client expects one
 
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-            logger.info(f"Connecting to Foundry Local OpenAI-compatible API at: {base_url}")
+            logger.info(f"🔗 Created OpenAI client for Foundry Local: {base_url}")
+
+            # Test endpoint connectivity
+            self._test_endpoint_connectivity(base_url)
         else:
             self.client = client
+            logger.info("🔗 Using provided OpenAI client for Foundry Local")
 
         # Configuration with sensible defaults
         self.default_model = self.config.get("default_model", DEFAULT_MODEL)
@@ -380,20 +384,43 @@ class FoundryLocalProvider:
         # Try FoundryLocalManager first if available
         if self.manager and hasattr(self.manager, 'endpoint'):
             endpoint = self.manager.endpoint.rstrip('/') + '/v1'
-            logger.info(f"Using endpoint from FoundryLocalManager: {endpoint}")
+            logger.info(f"✅ Foundry Local endpoint discovered via SDK: {endpoint}")
             return endpoint
 
-        # Fallback to simple port detection using config or default
-        # For now, use configured base_url or default to standard Foundry Local port
+        # Use configured base_url if provided
         if "base_url" in self.config:
-            return self.config["base_url"].rstrip('/') + '/v1'
+            endpoint = self.config["base_url"].rstrip('/') + '/v1'
+            logger.info(f"✅ Using configured Foundry Local endpoint: {endpoint}")
+            return endpoint
 
-        # Default fallback - only warn on first call
-        default_endpoint = self.config.get("base_url", "http://127.0.0.1:65320/v1")
+        # Default fallback
+        default_endpoint = "http://127.0.0.1:65320/v1"
         if not hasattr(self, '_endpoint_warning_shown'):
-            logger.warning(f"Could not auto-detect Foundry Local endpoint, using default: {default_endpoint}")
+            logger.warning(f"⚠️  Could not auto-detect Foundry Local endpoint, using default: {default_endpoint}")
             self._endpoint_warning_shown = True
+        else:
+            logger.info(f"ℹ️  Using default Foundry Local endpoint: {default_endpoint}")
         return default_endpoint
+
+    def _test_endpoint_connectivity(self, endpoint: str):
+        """Test if Foundry Local endpoint is accessible."""
+        try:
+            import aiohttp
+            import asyncio
+
+            async def test_connection():
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"{endpoint}/models", timeout=5) as response:
+                        if response.status == 200:
+                            models_data = await response.json()
+                            model_count = len(models_data.get('data', []))
+                            logger.info(f"✅ Foundry Local endpoint verified - {model_count} models available")
+                        else:
+                            logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status}")
+            # Run the test without blocking
+            asyncio.create_task(test_connection())
+        except Exception as e:
+            logger.warning(f"⚠️  Could not test Foundry Local endpoint connectivity: {e}")
 
     def _resolve_model_alias_to_id(self, model_alias: str) -> str:
         """Resolve model alias to full Foundry Local model ID.
