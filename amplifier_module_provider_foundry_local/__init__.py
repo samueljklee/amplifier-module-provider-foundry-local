@@ -394,7 +394,7 @@ class FoundryLocalProvider:
             return endpoint
 
         # Default fallback
-        default_endpoint = "http://127.0.0.1:65320/openai"
+        default_endpoint = "http://127.0.0.1:65320/v1"
         if not hasattr(self, '_endpoint_warning_shown'):
             logger.warning(f"⚠️  Could not auto-detect Foundry Local endpoint, using default: {default_endpoint}")
             self._endpoint_warning_shown = True
