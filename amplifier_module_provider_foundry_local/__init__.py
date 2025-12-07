@@ -124,7 +124,7 @@ class FoundryLocalProvider:
         self.offline_mode = self.config.get("offline_mode", True)
 
         # Provider priority for selection (higher priority = preferred for privacy)
-        self.priority = self.config.get("priority", 50)  # Higher than cloud providers for privacy
+        self.priority = self.config.get("priority", 100)  # Higher than cloud providers for privacy
 
     def _initialize_foundry_manager(self):
         """Initialize Foundry Local manager using official Microsoft SDK if available."""
