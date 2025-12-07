@@ -383,18 +383,18 @@ class FoundryLocalProvider:
         """Discover Foundry Local endpoint dynamically."""
         # Try FoundryLocalManager first if available
         if self.manager and hasattr(self.manager, 'endpoint'):
-            endpoint = self.manager.endpoint.rstrip('/') + '/v1'
+            endpoint = self.manager.endpoint.rstrip('/') + '/openai'
             logger.info(f"✅ Foundry Local endpoint discovered via SDK: {endpoint}")
             return endpoint
 
         # Use configured base_url if provided
         if "base_url" in self.config:
-            endpoint = self.config["base_url"].rstrip('/') + '/v1'
+            endpoint = self.config["base_url"].rstrip('/')
             logger.info(f"✅ Using configured Foundry Local endpoint: {endpoint}")
             return endpoint
 
         # Default fallback
-        default_endpoint = "http://127.0.0.1:65320/v1"
+        default_endpoint = "http://127.0.0.1:65320/openai"
         if not hasattr(self, '_endpoint_warning_shown'):
             logger.warning(f"⚠️  Could not auto-detect Foundry Local endpoint, using default: {default_endpoint}")
             self._endpoint_warning_shown = True
@@ -410,10 +410,10 @@ class FoundryLocalProvider:
 
             try:
                 response = requests.get(endpoint, timeout=10)
-                if response.status == 200:
-                    logger.info(f"✅ Foundry Local endpoint connectivity verified: {response.status} OK")
+                if response.status_code == 200:
+                    logger.info(f"✅ Foundry Local endpoint connectivity verified: {response.status_code} OK")
                 else:
-                    logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status}")
+                    logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status_code}")
             except requests.exceptions.ConnectionError:
                 logger.warning(f"⚠️  Foundry Local server not reachable at {endpoint}")
             except requests.exceptions.Timeout:
