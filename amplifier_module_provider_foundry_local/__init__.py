@@ -30,6 +30,8 @@ from ._constants import DEFAULT_MODEL
 from ._constants import DEFAULT_TIMEOUT
 from ._constants import DEFAULT_TEMPERATURE
 
+logger = logging.getLogger(__name__)
+
 # Import Foundry Local SDK - this is the official Microsoft approach
 # Note: SDK not yet available, using CLI approach instead
 try:
@@ -39,8 +41,6 @@ except ImportError:
     FoundryLocalManager = None
     FOUNDRY_LOCAL_SDK_AVAILABLE = False
     logger.info("FoundryLocalManager SDK not available - using CLI discovery instead")
-
-logger = logging.getLogger(__name__)
 
 
 async def mount(coordinator: ModuleCoordinator, config: dict[str, Any] | None = None):
@@ -413,7 +413,7 @@ class FoundryLocalProvider:
             logger.debug(f"CLI endpoint discovery failed: {e}")
 
         # Default fallback - use standard Foundry Local endpoint
-        default_endpoint = "http://127.0.0.1:65320/openai"
+        default_endpoint = "http://127.0.0.1:65320/v1"
         logger.info(f"ℹ️  Using default Foundry Local endpoint: {default_endpoint}")
         return default_endpoint
 
@@ -424,8 +424,8 @@ class FoundryLocalProvider:
             import requests
 
             try:
-                # Test the status endpoint which is the standard Foundry Local health check
-                test_url = f"{endpoint.rstrip('/')}/status"
+                # Test the models endpoint which validates OpenAI-compatible API
+                test_url = f"{endpoint.rstrip('/')}/models"
                 response = requests.get(test_url, timeout=10)
                 if response.status_code == 200:
                     logger.info(f"✅ Foundry Local endpoint connectivity verified: {test_url} {response.status_code} OK")
