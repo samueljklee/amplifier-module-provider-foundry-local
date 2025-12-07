@@ -34,13 +34,17 @@ logger = logging.getLogger(__name__)
 
 # Import Foundry Local SDK - this is the official Microsoft approach
 # Note: SDK not yet available, using CLI approach instead
+FOUNDRY_LOCAL_SDK_AVAILABLE = False
+FoundryLocalManager = None
 try:
     from foundry_local import FoundryLocalManager
     FOUNDRY_LOCAL_SDK_AVAILABLE = True
+    logger.info("FoundryLocalManager SDK found and available")
 except ImportError:
-    FoundryLocalManager = None
-    FOUNDRY_LOCAL_SDK_AVAILABLE = False
     logger.info("FoundryLocalManager SDK not available - using CLI discovery instead")
+except Exception as e:
+    logger.warning(f"Error importing FoundryLocalManager SDK: {e}")
+    FOUNDRY_LOCAL_SDK_AVAILABLE = False
 
 
 async def mount(coordinator: ModuleCoordinator, config: dict[str, Any] | None = None):
