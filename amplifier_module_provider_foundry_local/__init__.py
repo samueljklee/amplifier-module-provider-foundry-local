@@ -61,12 +61,25 @@ async def mount(coordinator: ModuleCoordinator, config: dict[str, Any] | None = 
     try:
         # Simple connection test by trying to list models
         if hasattr(provider.client, 'models'):
-            await provider.client.models.list()
-            logger.info(f"Mounted FoundryLocalProvider at {provider._discover_foundry_endpoint()}")
+            try:
+                await provider.client.models.list()
+                logger.info(f"Mounted FoundryLocalProvider at {provider._discover_foundry_endpoint()}")
+            except AttributeError as e:
+                if "_set_private_attributes" in str(e):
+                    # Known compatibility issue with OpenAI client and Foundry Local response format
+                    logger.warning(f"OpenAI client compatibility issue during model listing: {e}")
+                    logger.info(f"Mounted FoundryLocalProvider at {provider._discover_foundry_endpoint()} (with compatibility mode)")
+                else:
+                    raise e
         else:
             logger.warning(f"Foundry Local provider mounted but client initialization may have issues")
     except Exception as e:
-        logger.warning(f"Foundry Local server is not reachable: {e}. Provider mounted but will fail on use.")
+        if "_set_private_attributes" in str(e):
+            # Known compatibility issue - don't fail mount for this
+            logger.warning(f"OpenAI client compatibility issue during model listing: {e}")
+            logger.info(f"Mounted FoundryLocalProvider at {provider._discover_foundry_endpoint()} (with compatibility mode)")
+        else:
+            logger.warning(f"Foundry Local server is not reachable: {e}. Provider mounted but will fail on use.")
 
     await coordinator.mount("providers", provider, name="foundry-local")
 
