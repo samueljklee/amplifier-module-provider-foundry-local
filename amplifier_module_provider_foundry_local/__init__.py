@@ -409,11 +409,13 @@ class FoundryLocalProvider:
             import requests
 
             try:
-                response = requests.get(endpoint, timeout=10)
+                # Test the models endpoint which should exist for OpenAI-compatible APIs
+                test_url = f"{endpoint.rstrip('/')}/models"
+                response = requests.get(test_url, timeout=10)
                 if response.status_code == 200:
-                    logger.info(f"✅ Foundry Local endpoint connectivity verified: {response.status_code} OK")
+                    logger.info(f"✅ Foundry Local endpoint connectivity verified: {test_url} {response.status_code} OK")
                 else:
-                    logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status_code}")
+                    logger.warning(f"⚠️  Foundry Local endpoint returned status {response.status_code} for {test_url}")
             except requests.exceptions.ConnectionError:
                 logger.warning(f"⚠️  Foundry Local server not reachable at {endpoint}")
             except requests.exceptions.Timeout:
