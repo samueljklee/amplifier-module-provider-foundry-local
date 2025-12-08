@@ -71,7 +71,7 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
 
 1. **Install Amplifier**:
    ```bash
-   uv tool install git+https://github.com/microsoft/amplifier@next
+   uv tool install git+https://github.com/microsoft/amplifier
    ```
 
 2. **Run the profile**:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Amplifier-style interface using Foundry Local directly
-This bypasses the provider validation issues in amplifier@next
+This bypasses the provider validation issues in amplifier
 """
 
 import asyncio
