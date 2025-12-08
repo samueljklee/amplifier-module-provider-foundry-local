@@ -1,13 +1,12 @@
 # amplifier-module-provider-foundry-local
 
-Microsoft Foundry Local provider for Amplifier - privacy-first AI with audio transcription and hardware optimization.
+Microsoft Foundry Local provider for Amplifier - privacy-first local AI inference.
 
 ## Overview
 
 This provider integrates Microsoft Foundry Local with Amplifier, enabling:
 
 - **🔒 Privacy-First AI**: 100% offline inference, data never leaves your device
-- **🎤 Audio Transcription**: Native Whisper support for voice processing
 - **⚡ Hardware Optimization**: Automatic CPU/GPU/NPU optimization
 - **🛠️ Full Tool Calling**: Complete OpenAI-compatible tool calling support
 - **💰 Zero Cloud Costs**: Free inference after hardware investment
@@ -26,15 +25,15 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
    brew install foundrylocal
    ```
 
-2. **Install Python package**:
+2. **Start Foundry Local with a model**:
    ```bash
-   pip install foundry-local
+   foundry model run qwen2.5-7b
    ```
 
 ### Install Provider
 
 ```bash
-pip install amplifier-module-provider-foundry-local
+uv add git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
 ```
 
 ## Quick Start
@@ -46,13 +45,12 @@ Add to your Amplifier profile:
 ```yaml
 providers:
   - module: provider-foundry-local
-    source: git+https://github.com/microsoft/amplifier-module-provider-foundry-local@main
+    source: git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
     config:
       default_model: "qwen2.5-7b"
       auto_hardware_optimization: true
-      audio_enabled: true
-      offline_mode: true
-      max_tokens: 2048
+      base_url: "http://127.0.0.1:65320/v1"
+      timeout: 30
       temperature: 0.7
 ```
 
@@ -83,124 +81,52 @@ async with AmplifierSession(config=config) as session:
 
 ## Configuration Options
 
-### Core Settings
-
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `default_model` | string | `"qwen2.5-7b"` | Primary model to use |
+| `base_url` | string | `"http://127.0.0.1:65320/v1"` | Foundry Local endpoint |
 | `auto_hardware_optimization` | boolean | `true` | Auto-detect CPU/GPU/NPU |
-| `max_tokens` | integer | `2048` | Maximum output tokens |
-| `temperature` | float | `0.7` | Sampling temperature |
 | `timeout` | float | `30.0` | Request timeout in seconds |
-
-### Audio Features
-
-```yaml
-config:
-  audio:
-    enabled: true                    # Enable audio transcription
-    transcription_model: "whisper"   # Whisper model for transcription
-    streaming_audio: true           # Real-time audio processing
-```
-
-### Hardware Optimization
-
-```yaml
-config:
-  hardware:
-    gpu_acceleration: true          # Use GPU if available
-    npu_acceleration: true          # Use NPU if available
-    memory_limit: "16GB"           # Hardware memory constraint
-```
+| `temperature` | float | `0.7` | Sampling temperature |
 
 ## Available Models
 
-| Model | Size | Capabilities | Best For |
-|-------|------|--------------|----------|
-| `qwen2.5-7b` | 7B | Tools, Reasoning, Offline | General purpose |
-| `qwen2.5-0.5b` | 0.5B | Fast, Tools, Offline | Quick responses |
-| `phi-4-mini` | 3.8B | Fast, Tools, Offline | Efficient inference |
-| `gpt-oss-20b` | 20B | Tools, Reasoning | Complex tasks (requires 16GB+ VRAM) |
+Check Foundry Local documentation for the latest available models:
 
-## Unique Capabilities
-
-### 🔒 Privacy-First Operation
-
-```python
-# Sensitive data processing - never leaves device
-sensitive_response = await session.execute(
-    "Analyze this medical record for PHI: [sensitive content]",
-    provider_config={"offline_mode": True}
-)
+```bash
+foundry model list  # See all available models
 ```
 
-### 🎤 Audio Transcription
+Common models include:
+- `qwen2.5-7b` - General purpose (7B parameters)
+- `qwen2.5-0.5b` - Fast responses (0.5B parameters)
+- `phi-4-mini` - Efficient inference (3.8B parameters)
+- `gpt-oss-20b` - Complex tasks (20B parameters, requires 16GB+ VRAM)
 
-```python
-# Voice processing (future enhancement)
-# transcription = await provider.transcribe_audio(audio_data, "wav")
-```
+**For the complete and up-to-date model list, see [Microsoft Foundry Local Documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/)**
 
-### ⚡ Hardware Auto-Optimization
+## Privacy Use Cases
 
-The provider automatically detects and optimizes for:
+Perfect for scenarios where data privacy is critical:
 
-- **NVIDIA GPUs**: CUDA-optimized models
-- **AMD GPUs**: ROCm-optimized models
-- **Intel NPUs**: NPU-accelerated models
-- **Qualcomm NPUs**: Snapdragon-optimized models
-- **Apple Silicon**: Metal-optimized models
-- **CPU**: CPU-optimized models (fallback)
-
-## Use Cases
-
-### 1. Privacy-Critical Applications
 - **Healthcare**: HIPAA-compliant processing of patient data
 - **Legal**: Attorney-client privileged document analysis
 - **Finance**: PCI-DSS compliant financial data processing
 - **Government**: Classified document processing
+- **Edge Computing**: Field operations with no internet connectivity
 
-### 2. Offline/Edge Deployment
-- **Field Service**: Technicians in remote locations
-- **Manufacturing**: Factory floor automation
-- **Aviation**: Aircraft systems (air-gapped)
-- **Military**: Secure field operations
+## Hardware Optimization
 
-### 3. Audio-First Interfaces
-- **Voice Dictation**: Medical/legal transcription
-- **Meeting Notes**: Real-time transcription
-- **Accessibility**: Voice-controlled interfaces
+Foundry Local automatically detects and optimizes for available hardware:
+- **NVIDIA GPUs**: CUDA-optimized models
+- **AMD GPUs**: ROCm-optimized models
+- **Intel NPUs**: NPU-accelerated models
+- **Apple Silicon**: Metal-optimized models
+- **CPU**: CPU-optimized models (fallback)
 
-### 4. Cost-Optimized High Volume
-- **Content Moderation**: High-volume text analysis
-- **Customer Support**: Automated response generation
-- **Data Processing**: Bulk document analysis
+## Performance
 
-## Hybrid Cloud-Local Patterns
-
-Combine Foundry Local for privacy with cloud providers for capability:
-
-```yaml
-providers:
-  # Privacy-first processing
-  - module: provider-foundry-local
-    config:
-      priority: 10  # High priority for sensitive data
-
-  # Cloud fallback for complex reasoning
-  - module: provider-anthropic
-    config:
-      priority: 100  # Lower priority
-```
-
-## Performance Benchmarks
-
-| Hardware | Model | Latency | Throughput |
-|----------|-------|---------|------------|
-| RTX 4090 | qwen2.5-7b | ~50ms | ~20 tokens/sec |
-| M3 Max | qwen2.5-7b | ~80ms | ~15 tokens/sec |
-| CPU (16-core) | qwen2.5-0.5b | ~200ms | ~8 tokens/sec |
-| Intel NPU | phi-4-mini | ~120ms | ~12 tokens/sec |
+For performance benchmarks and optimization guidance, see the [Microsoft Foundry Local Documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/).
 
 ## Troubleshooting
 
@@ -239,21 +165,18 @@ config:
 
 ## Development
 
-### Running Tests
-
-```bash
-cd amplifier-module-provider-foundry-local
-pytest tests/
-```
-
 ### Local Development
 
 ```bash
+# Clone repository
+git clone https://github.com/samueljklee/amplifier-module-provider-foundry-local.git
+cd amplifier-module-provider-foundry-local
+
 # Install in development mode
-pip install -e .
+uv add -e .
 
 # Test with Amplifier
-amplifier run --provider foundry-local "Hello, Foundry Local!"
+amplifier run --profile foundry-minimal "Hello, Foundry Local!"
 ```
 
 ## Contributing
@@ -272,4 +195,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**🚀 This provider enables unique privacy-first AI capabilities that no cloud provider can match!**
+**🔒 Privacy-first AI that never leaves your device!**
