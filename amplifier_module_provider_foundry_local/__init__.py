@@ -8,6 +8,7 @@ __all__ = ["mount", "FoundryLocalProvider"]
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any
 from typing import cast
@@ -33,18 +34,27 @@ from ._constants import DEFAULT_TEMPERATURE
 logger = logging.getLogger(__name__)
 
 # Import Foundry Local SDK - this is the official Microsoft approach
-# Note: SDK not yet available, using CLI approach instead
+# Based on: https://learn.microsoft.com/azure/ai-foundry/foundry-local/reference/reference-sdk
 FOUNDRY_LOCAL_SDK_AVAILABLE = False
+FOUNDRY_LOCAL_CONFIG_AVAILABLE = False
 FoundryLocalManager = None
+FoundryLocalConfig = None
+
 try:
+    # Try to import the main SDK components
     from foundry_local import FoundryLocalManager
+    from foundry_local.config import FoundryLocalConfig
     FOUNDRY_LOCAL_SDK_AVAILABLE = True
-    logger.info("FoundryLocalManager SDK found and available")
+    FOUNDRY_LOCAL_CONFIG_AVAILABLE = True
+    logger.info("✅ FoundryLocalManager SDK and Config found and available")
 except ImportError:
-    logger.info("FoundryLocalManager SDK not available - using CLI discovery instead")
-except Exception as e:
-    logger.warning(f"Error importing FoundryLocalManager SDK: {e}")
+    logger.info("ℹ️  FoundryLocalManager SDK not available - using HTTP fallback approach")
     FOUNDRY_LOCAL_SDK_AVAILABLE = False
+    FOUNDRY_LOCAL_CONFIG_AVAILABLE = False
+except Exception as e:
+    logger.warning(f"⚠️  Error importing FoundryLocalManager SDK: {e}")
+    FOUNDRY_LOCAL_SDK_AVAILABLE = False
+    FOUNDRY_LOCAL_CONFIG_AVAILABLE = False
 
 
 async def mount(coordinator: ModuleCoordinator, config: dict[str, Any] | None = None):
@@ -91,18 +101,20 @@ class FoundryLocalProvider:
         coordinator: ModuleCoordinator | None = None,
         client: AsyncOpenAI | None = None,
     ):
-        """Initialize Foundry Local provider using official Microsoft FoundryLocalManager."""
+        """Initialize Foundry Local provider with hybrid SDK/HTTP approach."""
         self.config = config or {}
         self.coordinator = coordinator
         self.manager = None
+        self.hardware_capabilities = None
+        self.performance_metrics = {}
 
-        # Initialize Foundry Local manager using official SDK
-        self._initialize_foundry_manager()
+        # Initialize using hybrid approach
+        self._initialize_hybrid_approach()
 
         # Create OpenAI client pointing to Foundry Local endpoint
         if client is None:
-            # Discover Foundry Local endpoint dynamically
-            base_url = self._discover_foundry_endpoint()
+            # Get endpoint from SDK or discover dynamically
+            base_url = self._get_endpoint()
             api_key = "foundry-local-key"  # Not required but OpenAI client expects one
 
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
@@ -129,30 +141,193 @@ class FoundryLocalProvider:
         # Provider priority for selection (higher priority = preferred for privacy)
         self.priority = self.config.get("priority", 100)  # Higher than cloud providers for privacy
 
-    def _initialize_foundry_manager(self):
-        """Initialize Foundry Local manager using official Microsoft SDK if available."""
+        # Log initialization summary
+        self._log_initialization_summary()
+
+    def _initialize_hybrid_approach(self):
+        """Initialize using hybrid SDK/HTTP approach with full feature detection."""
         if FOUNDRY_LOCAL_SDK_AVAILABLE:
             try:
-                # Use FoundryLocalManager from official Microsoft SDK
-                # Based on Microsoft docs: https://learn.microsoft.com/azure/ai-foundry/foundry-local/how-to/how-to-integrate-with-inference-sdks
+                logger.info("🚀 Initializing with Foundry Local SDK...")
 
-                # Get default model alias - use alias instead of full model ID for automatic hardware selection
+                # Create SDK configuration if available
+                if FOUNDRY_LOCAL_CONFIG_AVAILABLE:
+                    self.sdk_config = self._create_sdk_config()
+                else:
+                    self.sdk_config = None
+
+                # Initialize hardware detection
+                self._detect_hardware_capabilities()
+
+                # Initialize manager with model
                 model_alias = self.config.get("model_alias", "qwen2.5-7b")
 
-                # Create FoundryLocalManager instance
-                # This will start the Foundry Local service if not already running
-                self.manager = FoundryLocalManager(model_alias)
+                if FOUNDRY_LOCAL_CONFIG_AVAILABLE:
+                    # Use rich configuration
+                    self.manager = FoundryLocalManager(
+                        model=model_alias,
+                        config=self.sdk_config
+                    )
+                else:
+                    # Use simple initialization
+                    self.manager = FoundryLocalManager(model_alias)
 
-                logger.info(f"Initialized FoundryLocalManager with model alias: {model_alias}")
-                logger.info(f"Foundry Local endpoint: {self.manager.endpoint}")
+                logger.info(f"✅ Initialized FoundryLocalManager with model: {model_alias}")
+
+                # Get manager properties
+                if hasattr(self.manager, 'endpoint'):
+                    logger.info(f"📍 Foundry Local endpoint: {self.manager.endpoint}")
+                if hasattr(self.manager, 'model_info'):
+                    logger.info(f"🧠 Model info: {self.manager.model_info}")
 
             except Exception as e:
-                logger.warning(f"Failed to initialize FoundryLocalManager: {e}")
-                # Fallback to None - will use basic endpoint detection
+                logger.warning(f"⚠️  Failed to initialize FoundryLocalManager: {e}")
+                logger.info("🔄 Falling back to HTTP approach")
                 self.manager = None
+                self.sdk_config = None
+                self._detect_hardware_capabilities_cli()
         else:
-            logger.info("FoundryLocalManager SDK not available, using OpenAI client directly")
+            logger.info("🌐 Using HTTP approach (SDK not available)")
             self.manager = None
+            self.sdk_config = None
+            self._detect_hardware_capabilities_cli()
+
+    def _create_sdk_config(self) -> Any:
+        """Create rich SDK configuration based on user settings."""
+        if not FOUNDRY_LOCAL_CONFIG_AVAILABLE:
+            return None
+
+        try:
+            # Create configuration based on user preferences
+            config = FoundryLocalConfig()
+
+            # Hardware optimization settings
+            if self.auto_hardware_optimization:
+                config.hardware_acceleration = "auto"
+                config.memory_optimization = True
+                config.performance_mode = "balanced"  # Options: latency, throughput, balanced
+            else:
+                config.hardware_acceleration = "cpu"
+                config.memory_optimization = False
+                config.performance_mode = "latency"
+
+            # Model configuration
+            config.offline_mode = self.offline_mode
+            config.debug_mode = self.debug
+
+            # Performance settings
+            config.timeout = self.timeout
+            config.max_tokens = self.max_tokens
+
+            logger.debug(f"Created SDK config with hardware_acceleration={config.hardware_acceleration}")
+            return config
+
+        except Exception as e:
+            logger.warning(f"Failed to create SDK config: {e}")
+            return None
+
+    def _detect_hardware_capabilities(self):
+        """Detect hardware capabilities using SDK."""
+        if self.manager and hasattr(self.manager, 'get_hardware_capabilities'):
+            try:
+                self.hardware_capabilities = self.manager.get_hardware_capabilities()
+                logger.info("🔧 Hardware capabilities detected via SDK:")
+                logger.info(f"   GPU Available: {getattr(self.hardware_capabilities, 'has_gpu', False)}")
+                logger.info(f"   GPU Memory: {getattr(self.hardware_capabilities, 'gpu_memory_mb', 'Unknown')} MB")
+                logger.info(f"   CPU Cores: {getattr(self.hardware_capabilities, 'cpu_cores', 'Unknown')}")
+                logger.info(f"   Optimal Batch Size: {getattr(self.hardware_capabilities, 'optimal_batch_size', 'Unknown')}")
+            except Exception as e:
+                logger.warning(f"Failed to detect hardware capabilities via SDK: {e}")
+                self.hardware_capabilities = None
+        else:
+            self.hardware_capabilities = None
+
+    def _detect_hardware_capabilities_cli(self):
+        """Detect hardware capabilities using CLI fallback."""
+        try:
+            import subprocess
+            import platform
+
+            capabilities = {
+                "platform": platform.system(),
+                "has_gpu": False,
+                "gpu_memory_mb": 0,
+                "cpu_cores": os.cpu_count(),
+                "memory_gb": 0,
+                "optimal_batch_size": 1
+            }
+
+            # Try to detect GPU
+            try:
+                # NVIDIA GPU detection
+                result = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    capabilities["has_gpu"] = True
+                    capabilities["gpu_memory_mb"] = int(result.stdout.strip())
+                    logger.info(f"🎮 Detected NVIDIA GPU: {capabilities['gpu_memory_mb']} MB")
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+                pass
+
+            # System memory
+            try:
+                if platform.system() == "Darwin":  # macOS
+                    result = subprocess.run(["sysctl", "hw.memsize"], capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        memory_bytes = int(result.stdout.split(":")[1].strip())
+                        capabilities["memory_gb"] = memory_bytes // (1024**3)
+                elif platform.system() == "Linux":
+                    with open("/proc/meminfo", "r") as f:
+                        for line in f:
+                            if line.startswith("MemTotal:"):
+                                memory_kb = int(line.split()[1])
+                                capabilities["memory_gb"] = memory_kb // (1024**2)
+                                break
+            except Exception:
+                pass
+
+            # Set optimal batch size based on hardware
+            if capabilities["has_gpu"] and capabilities["gpu_memory_mb"] >= 8000:
+                capabilities["optimal_batch_size"] = 4
+            elif capabilities["has_gpu"] and capabilities["gpu_memory_mb"] >= 4000:
+                capabilities["optimal_batch_size"] = 2
+            else:
+                capabilities["optimal_batch_size"] = 1
+
+            self.hardware_capabilities = capabilities
+            logger.info(f"🔧 Hardware capabilities detected via CLI: {capabilities['cpu_cores']} cores, {capabilities['memory_gb']} GB RAM")
+
+        except Exception as e:
+            logger.warning(f"Failed to detect hardware capabilities: {e}")
+            self.hardware_capabilities = None
+
+    def _get_endpoint(self) -> str:
+        """Get Foundry Local endpoint from SDK or discover dynamically."""
+        # Try SDK first
+        if self.manager and hasattr(self.manager, 'endpoint'):
+            endpoint = self.manager.endpoint
+            logger.info(f"✅ Using SDK endpoint: {endpoint}")
+            return endpoint
+
+        # Fallback to discovery
+        endpoint = self._discover_foundry_endpoint()
+        logger.info(f"🔍 Using discovered endpoint: {endpoint}")
+        return endpoint
+
+    def _log_initialization_summary(self):
+        """Log comprehensive initialization summary."""
+        logger.info("📋 Foundry Local Provider Initialization Summary:")
+        logger.info(f"   SDK Available: {FOUNDRY_LOCAL_SDK_AVAILABLE}")
+        logger.info(f"   Config Available: {FOUNDRY_LOCAL_CONFIG_AVAILABLE}")
+        logger.info(f"   Manager Initialized: {self.manager is not None}")
+        logger.info(f"   Hardware Optimization: {self.auto_hardware_optimization}")
+        logger.info(f"   Offline Mode: {self.offline_mode}")
+        logger.info(f"   Default Model: {self.default_model}")
+
+        if self.hardware_capabilities:
+            logger.info(f"   Hardware: {self.hardware_capabilities.get('cpu_cores', 'Unknown')} cores")
+            if self.hardware_capabilities.get('has_gpu'):
+                logger.info(f"   GPU: {self.hardware_capabilities.get('gpu_memory_mb', 'Unknown')} MB")
 
     def get_info(self) -> ProviderInfo:
         """Get provider metadata."""
@@ -282,100 +457,76 @@ class FoundryLocalProvider:
         return models
 
     async def complete(self, request: ChatRequest, **kwargs) -> ChatResponse:
-        """Generate completion using Foundry Local's OpenAI-compatible API."""
-        logger.info(f"[PROVIDER] Foundry Local: Received ChatRequest with {len(request.messages)} messages")
+        """Generate completion using Foundry Local with performance monitoring and enhanced error handling."""
+        request_id = f"req_{int(time.time() * 1000)}"
+        logger.info(f"[PROVIDER] Foundry Local [{request_id}]: Received ChatRequest with {len(request.messages)} messages")
 
         # Use Foundry Local's model alias and resolve to full model ID
         model_alias = kwargs.get("model", self.default_model)
+        actual_model_id = None
 
+        # Enhanced model resolution with SDK
         try:
-            # Get actual model ID from Foundry Local manager if available
-            if self.manager:
-                model_info = self.manager.get_model_info(model_alias)
-                if model_info:
-                    actual_model_id = model_info.id
-                    logger.debug(f"[PROVIDER] Using model variant: {actual_model_id}")
-                else:
-                    actual_model_id = self._resolve_model_alias_to_id(model_alias)
-            else:
-                actual_model_id = self._resolve_model_alias_to_id(model_alias)
-
+            actual_model_id = await self._resolve_model_with_sdk(model_alias)
         except Exception as e:
-            logger.debug(f"[PROVIDER] Could not get model info from Foundry Local: {e}")
+            logger.warning(f"[PROVIDER] [{request_id}] Model resolution failed: {e}")
             actual_model_id = self._resolve_model_alias_to_id(model_alias)
 
-        # Convert request to OpenAI format (reuse from OpenAI provider patterns)
-        message_list = list(request.messages)
-
-        # Separate system messages for instructions
-        system_msgs = [m for m in message_list if m.role == "system"]
-        conversation = [m for m in message_list if m.role in ("user", "assistant", "tool")]
-
-        # Combine system messages as instructions
-        instructions = (
-            "\n\n".join(m.content if isinstance(m.content, str) else "" for m in system_msgs)
-            if system_msgs else None
-        )
-
-        # Convert to OpenAI chat format
-        openai_messages = self._convert_messages_to_openai(conversation)
-
-        # Prepare request parameters
-        params = {
-            "model": actual_model_id,
-            "messages": openai_messages,
-        }
-
-        if instructions:
-            params["system"] = instructions
-
-        if request.max_output_tokens:
-            params["max_tokens"] = request.max_output_tokens
-        elif max_tokens := kwargs.get("max_tokens", self.max_tokens):
-            params["max_tokens"] = max_tokens
-
-        if request.temperature is not None:
-            params["temperature"] = request.temperature
-        elif temperature := kwargs.get("temperature", self.temperature):
-            params["temperature"] = temperature
-
-        # Add tools if provided
-        if request.tools:
-            params["tools"] = self._convert_tools_from_request(request.tools)
-            params["tool_choice"] = kwargs.get("tool_choice", "auto")
-            params["parallel_tool_calls"] = kwargs.get("parallel_tool_calls", True)
-
-        logger.info(f"[PROVIDER] Foundry Local API call - model: {params['model']}, tools: {len(request.tools) if request.tools else 0}")
-
+        # Performance tracking
         start_time = time.time()
+        request_start = start_time
 
+        # Emit request start event
+        if self.coordinator and hasattr(self.coordinator, "hooks"):
+            await self._emit_request_start(request_id, actual_model_id, request)
+
+        # Prepare for request
         try:
+            # Convert request to OpenAI format
+            openai_messages = self._convert_request_to_openai(request)
+            params = self._prepare_openai_params(actual_model_id, openai_messages, request, **kwargs)
+
+            # Log request details
+            logger.info(f"[PROVIDER] [{request_id}] API call - model: {params['model']}, "
+                       f"tools: {len(request.tools) if request.tools else 0}, "
+                       f"max_tokens: {params.get('max_tokens', 'default')}")
+
+            # Make the API call
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(**params),
                 timeout=self.timeout
             )
-            elapsed_ms = int((time.time() - start_time) * 1000)
 
-            logger.info(f"[PROVIDER] Foundry Local response received in {elapsed_ms}ms")
+            # Calculate performance metrics
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            total_time = time.time() - request_start
+
+            # Update performance metrics
+            await self._update_performance_metrics(request_id, actual_model_id, response, elapsed_ms, total_time)
 
             # Convert OpenAI response to ChatResponse
-            return self._convert_openai_response_to_chat_response(response, elapsed_ms)
+            chat_response = self._convert_openai_response_to_chat_response(response, elapsed_ms)
+
+            logger.info(f"[PROVIDER] [{request_id}] Response received in {elapsed_ms}ms")
+
+            # Emit request completion event
+            if self.coordinator and hasattr(self.coordinator, "hooks"):
+                await self._emit_request_complete(request_id, actual_model_id, chat_response, elapsed_ms)
+
+            return chat_response
+
+        except asyncio.TimeoutError as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            error_msg = f"Request timeout after {self.timeout}s"
+            logger.error(f"[PROVIDER] [{request_id}] {error_msg}")
+            await self._handle_error(request_id, actual_model_id, error_msg, e, elapsed_ms)
+            raise
 
         except Exception as e:
             elapsed_ms = int((time.time() - start_time) * 1000)
-            logger.error(f"[PROVIDER] Foundry Local API error: {e}")
-
-            # Emit error event
-            if self.coordinator and hasattr(self.coordinator, "hooks"):
-                await self.coordinator.hooks.emit(
-                    "provider:error",
-                    {
-                        "provider": self.name,
-                        "model": params["model"],
-                        "error": str(e),
-                        "duration_ms": elapsed_ms,
-                    },
-                )
+            error_msg = f"API error: {str(e)}"
+            logger.error(f"[PROVIDER] [{request_id}] {error_msg}")
+            await self._handle_error(request_id, actual_model_id, error_msg, e, elapsed_ms)
             raise
 
     def _discover_foundry_endpoint(self) -> str:
@@ -571,3 +722,213 @@ class FoundryLocalProvider:
         if not response.tool_calls:
             return []
         return response.tool_calls
+
+    # Enhanced helper methods for SDK integration and performance monitoring
+    async def _resolve_model_with_sdk(self, model_alias: str) -> str:
+        """Resolve model alias using SDK for enhanced model information."""
+        if self.manager:
+            try:
+                # Try SDK model resolution first
+                if hasattr(self.manager, 'get_model_info'):
+                    model_info = self.manager.get_model_info(model_alias)
+                    if model_info and hasattr(model_info, 'id'):
+                        logger.debug(f"[SDK] Resolved model {model_alias} -> {model_info.id}")
+                        return model_info.id
+            except Exception as e:
+                logger.debug(f"[SDK] Model resolution failed: {e}")
+
+        # Fallback to alias resolution
+        return self._resolve_model_alias_to_id(model_alias)
+
+    async def _emit_request_start(self, request_id: str, model: str, request: ChatRequest):
+        """Emit request start event for monitoring."""
+        try:
+            await self.coordinator.hooks.emit(
+                "provider:request_start",
+                {
+                    "provider": self.name,
+                    "request_id": request_id,
+                    "model": model,
+                    "message_count": len(request.messages),
+                    "has_tools": bool(request.tools),
+                    "tool_count": len(request.tools) if request.tools else 0,
+                    "max_tokens": request.max_output_tokens,
+                    "temperature": request.temperature,
+                    "timestamp": time.time(),
+                    "hardware_capabilities": self.hardware_capabilities,
+                }
+            )
+        except Exception as e:
+            logger.debug(f"[{request_id}] Failed to emit request start event: {e}")
+
+    async def _emit_request_complete(self, request_id: str, model: str, response: ChatResponse, elapsed_ms: int):
+        """Emit request completion event for monitoring."""
+        try:
+            await self.coordinator.hooks.emit(
+                "provider:request_complete",
+                {
+                    "provider": self.name,
+                    "request_id": request_id,
+                    "model": model,
+                    "elapsed_ms": elapsed_ms,
+                    "tokens_used": response.usage.total_tokens if response.usage else 0,
+                    "input_tokens": response.usage.input_tokens if response.usage else 0,
+                    "output_tokens": response.usage.output_tokens if response.usage else 0,
+                    "finish_reason": response.finish_reason,
+                    "has_tool_calls": bool(response.tool_calls),
+                    "tool_call_count": len(response.tool_calls) if response.tool_calls else 0,
+                    "timestamp": time.time(),
+                }
+            )
+        except Exception as e:
+            logger.debug(f"[{request_id}] Failed to emit request complete event: {e}")
+
+    async def _update_performance_metrics(self, request_id: str, model: str, response, elapsed_ms: int, total_time: float):
+        """Update internal performance metrics."""
+        try:
+            # Calculate tokens per second
+            total_tokens = response.usage.total_tokens if response.usage else 0
+            tokens_per_second = total_tokens / (total_time) if total_time > 0 else 0
+
+            # Store in performance metrics
+            self.performance_metrics[request_id] = {
+                "model": model,
+                "elapsed_ms": elapsed_ms,
+                "total_time": total_time,
+                "tokens_used": total_tokens,
+                "tokens_per_second": tokens_per_second,
+                "timestamp": time.time(),
+                "success": True,
+            }
+
+            # Log performance if debug mode
+            if self.debug and total_tokens > 0:
+                logger.info(f"[PERF] {request_id}: {total_tokens} tokens in {elapsed_ms}ms "
+                           f"({tokens_per_second:.1f} tokens/sec)")
+
+        except Exception as e:
+            logger.debug(f"[{request_id}] Failed to update performance metrics: {e}")
+
+    async def _handle_error(self, request_id: str, model: str, error_msg: str, exception: Exception, elapsed_ms: int):
+        """Handle errors with enhanced logging and event emission."""
+        try:
+            # Store error in performance metrics
+            self.performance_metrics[request_id] = {
+                "model": model,
+                "elapsed_ms": elapsed_ms,
+                "error": error_msg,
+                "error_type": type(exception).__name__,
+                "timestamp": time.time(),
+                "success": False,
+            }
+
+            # Emit error event
+            if self.coordinator and hasattr(self.coordinator, "hooks"):
+                await self.coordinator.hooks.emit(
+                    "provider:error",
+                    {
+                        "provider": self.name,
+                        "request_id": request_id,
+                        "model": model,
+                        "error": error_msg,
+                        "error_type": type(exception).__name__,
+                        "elapsed_ms": elapsed_ms,
+                        "timestamp": time.time(),
+                        "recoverable": isinstance(exception, (asyncio.TimeoutError, ConnectionError)),
+                    }
+                )
+
+            # Enhanced error categorization
+            if isinstance(exception, asyncio.TimeoutError):
+                logger.error(f"[{request_id}] TIMEOUT: {error_msg}")
+            elif isinstance(exception, ConnectionError):
+                logger.error(f"[{request_id}] CONNECTION: {error_msg}")
+            elif "429" in str(exception):
+                logger.error(f"[{request_id}] RATE_LIMIT: {error_msg}")
+            elif "500" in str(exception):
+                logger.error(f"[{request_id}] SERVER_ERROR: {error_msg}")
+            else:
+                logger.error(f"[{request_id}] UNKNOWN_ERROR: {error_msg}")
+
+        except Exception as e:
+            logger.debug(f"[{request_id}] Error handling failed: {e}")
+
+    def _convert_request_to_openai(self, request: ChatRequest) -> list[dict[str, Any]]:
+        """Convert Amplifier ChatRequest to OpenAI message format."""
+        message_list = list(request.messages)
+
+        # Separate system messages for instructions
+        system_msgs = [m for m in message_list if m.role == "system"]
+        conversation = [m for m in message_list if m.role in ("user", "assistant", "tool")]
+
+        # Convert to OpenAI chat format
+        return self._convert_messages_to_openai(conversation)
+
+    def _prepare_openai_params(self, model: str, openai_messages: list, request: ChatRequest, **kwargs) -> dict[str, Any]:
+        """Prepare OpenAI API parameters."""
+        message_list = list(request.messages)
+        system_msgs = [m for m in message_list if m.role == "system"]
+
+        # Combine system messages as instructions
+        instructions = (
+            "\n\n".join(m.content if isinstance(m.content, str) else "" for m in system_msgs)
+            if system_msgs else None
+        )
+
+        # Build parameters
+        params = {
+            "model": model,
+            "messages": openai_messages,
+        }
+
+        if instructions:
+            params["system"] = instructions
+
+        if request.max_output_tokens:
+            params["max_tokens"] = request.max_output_tokens
+        elif max_tokens := kwargs.get("max_tokens", self.max_tokens):
+            params["max_tokens"] = max_tokens
+
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        elif temperature := kwargs.get("temperature", self.temperature):
+            params["temperature"] = temperature
+
+        # Add tools if provided
+        if request.tools:
+            params["tools"] = self._convert_tools_from_request(request.tools)
+            params["tool_choice"] = kwargs.get("tool_choice", "auto")
+            params["parallel_tool_calls"] = kwargs.get("parallel_tool_calls", True)
+
+        return params
+
+    def get_performance_metrics(self) -> dict[str, Any]:
+        """Get current performance metrics summary."""
+        if not self.performance_metrics:
+            return {}
+
+        # Calculate summary statistics
+        successful_requests = [m for m in self.performance_metrics.values() if m.get("success")]
+        failed_requests = [m for m in self.performance_metrics.values() if not m.get("success")]
+
+        total_requests = len(self.performance_metrics)
+        success_rate = len(successful_requests) / total_requests if total_requests > 0 else 0
+
+        # Calculate averages
+        if successful_requests:
+            avg_latency = sum(m["elapsed_ms"] for m in successful_requests) / len(successful_requests)
+            avg_tokens_per_sec = sum(m.get("tokens_per_second", 0) for m in successful_requests) / len(successful_requests)
+        else:
+            avg_latency = 0
+            avg_tokens_per_sec = 0
+
+        return {
+            "total_requests": total_requests,
+            "successful_requests": len(successful_requests),
+            "failed_requests": len(failed_requests),
+            "success_rate": success_rate,
+            "average_latency_ms": avg_latency,
+            "average_tokens_per_second": avg_tokens_per_sec,
+            "hardware_capabilities": self.hardware_capabilities,
+            "last_updated": time.time(),
+        }
