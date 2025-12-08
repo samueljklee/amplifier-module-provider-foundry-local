@@ -875,14 +875,16 @@ class FoundryLocalProvider:
             if system_msgs else None
         )
 
-        # Build parameters
+        # Build parameters with system message included in messages array
+        messages_with_system = []
+        if instructions:
+            messages_with_system.append({"role": "system", "content": instructions})
+        messages_with_system.extend(openai_messages)
+
         params = {
             "model": model,
-            "messages": openai_messages,
+            "messages": messages_with_system,
         }
-
-        if instructions:
-            params["system"] = instructions
 
         if request.max_output_tokens:
             params["max_tokens"] = request.max_output_tokens
