@@ -15,7 +15,16 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
 
 ### Prerequisites
 
-1. **Install Foundry Local**:
+1. **Install Amplifier**:
+   ```bash
+   # Install UV (if not already installed)
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+
+   # Install Amplifier
+   uv tool install git+https://github.com/microsoft/amplifier@next
+   ```
+
+2. **Install Foundry Local**:
    ```bash
    # Windows
    winget install Microsoft.FoundryLocal
@@ -25,9 +34,11 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
    brew install foundrylocal
    ```
 
-2. **Start Foundry Local with a model**:
+3. **Start Foundry Local with a model**:
    ```bash
    foundry model run qwen2.5-7b
+   # This starts Foundry Local on default port 65320
+   # Confirm it's running: http://127.0.0.1:65320/v1
    ```
 
 ### Install Provider
@@ -47,7 +58,7 @@ providers:
   - module: provider-foundry-local
     source: git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
     config:
-      default_model: "qwen2.5-7b"
+      default_model: "qwen2.5-7b-instruct-generic-gpu"
       auto_hardware_optimization: true
       base_url: "http://127.0.0.1:65320/v1"
       timeout: 30
@@ -65,7 +76,7 @@ config = {
         "module": "provider-foundry-local",
         "source": "git+https://github.com/microsoft/amplifier-module-provider-foundry-local@main",
         "config": {
-            "default_model": "qwen2.5-7b",
+            "default_model": "qwen2.5-7b-instruct-generic-gpu",
             "auto_hardware_optimization": True
         }
     }],
@@ -79,11 +90,33 @@ async with AmplifierSession(config=config) as session:
     print(response)
 ```
 
+### Verification
+
+To verify your installation is working correctly:
+
+1. **Check Foundry Local is running**:
+   ```bash
+   curl http://127.0.0.1:65320/v1/models
+   # Should return a JSON list of available models
+   ```
+
+2. **Test provider connection**:
+   ```bash
+   amplifier run --profile foundry-minimal "What model are you using?" --mode chat
+   # Should respond with the Foundry Local model name
+   ```
+
+3. **Check provider logs**:
+   Look for these success indicators in the output:
+   - `✅ Using configured Foundry Local endpoint: http://127.0.0.1:65320/v1`
+   - `✅ Foundry Local endpoint is reachable`
+   - `✅ Found valid model: [model-name]`
+
 ## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `default_model` | string | `"qwen2.5-7b"` | Primary model to use |
+| `default_model` | string | `"qwen2.5-7b-instruct-generic-gpu"` | Primary model to use (use exact ID from `foundry model list`) |
 | `base_url` | string | `"http://127.0.0.1:65320/v1"` | Foundry Local endpoint |
 | `auto_hardware_optimization` | boolean | `true` | Auto-detect CPU/GPU/NPU |
 | `timeout` | float | `30.0` | Request timeout in seconds |
@@ -91,19 +124,21 @@ async with AmplifierSession(config=config) as session:
 
 ## Available Models
 
-Check Foundry Local documentation for the latest available models:
+Check what models are available on your system:
 
 ```bash
 foundry model list  # See all available models
 ```
 
 Common models include:
-- `qwen2.5-7b` - General purpose (7B parameters)
-- `qwen2.5-0.5b` - Fast responses (0.5B parameters)
-- `phi-4-mini` - Efficient inference (3.8B parameters)
-- `gpt-oss-20b` - Complex tasks (20B parameters, requires 16GB+ VRAM)
+- `qwen2.5-7b-instruct-generic-gpu` - General purpose (7B parameters)
+- `qwen2.5-0.5b-instruct-generic-onnx` - Fast responses (0.5B parameters)
+- `phi-4-mini-instruct-generic-gpu` - Efficient inference (3.8B parameters)
+- `gpt-oss-20b-instruct-generic-gpu` - Complex tasks (20B parameters, requires 16GB+ VRAM)
 
-**For the complete and up-to-date model list, see [Microsoft Foundry Local Documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/)**
+**Important**: Use the exact model IDs returned by `foundry model list` in your configuration. The model IDs include variant information (like `-instruct-generic-gpu`) that specifies the optimization type.
+
+**For the complete and up-to-date model list, see the [Foundry Local CLI Reference](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/reference/reference-cli?view=foundry-classic)**
 
 ## Privacy Use Cases
 
@@ -124,9 +159,7 @@ Foundry Local automatically detects and optimizes for available hardware:
 - **Apple Silicon**: Metal-optimized models
 - **CPU**: CPU-optimized models (fallback)
 
-## Performance
-
-For performance benchmarks and optimization guidance, see the [Microsoft Foundry Local Documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/).
+For detailed hardware optimization guidance, see the [Foundry Local CLI Reference](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/reference/reference-cli?view=foundry-classic).
 
 ## Troubleshooting
 
@@ -154,13 +187,24 @@ For performance benchmarks and optimization guidance, see the [Microsoft Foundry
 
 ### Debug Mode
 
-Enable detailed logging:
+Enable detailed logging in your Amplifier profile:
 
 ```yaml
-config:
-  debug: true
-  raw_debug: true
-  debug_truncate_length: 1000
+providers:
+  - module: provider-foundry-local
+    source: git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
+    config:
+      default_model: "qwen2.5-7b"
+      base_url: "http://127.0.0.1:65320/v1"
+      debug: true
+      raw_debug: true
+      debug_truncate_length: 1000
+```
+
+Or enable debug mode per command:
+
+```bash
+amplifier run --profile foundry-minimal "Your prompt here" --debug
 ```
 
 ## Development
