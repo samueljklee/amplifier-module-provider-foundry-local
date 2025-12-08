@@ -328,11 +328,14 @@ class TestFoundryLocalIntegration:
         # Execute completion
         response = await provider.complete(request)
 
-        # Verify the API was called with system message
+        # Verify the API was called with system message in messages array
         mock_client.chat.completions.create.assert_called_once()
         call_args = mock_client.chat.completions.create.call_args[1]
-        assert "system" in call_args
-        assert call_args["system"] == "You are a privacy-focused AI assistant."
+        messages = call_args["messages"]
+        # System message should be first in messages array
+        assert len(messages) > 0
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a privacy-focused AI assistant."
 
     @pytest.mark.asyncio
     async def test_provider_context_compaction_support(self, provider_with_mock_client):

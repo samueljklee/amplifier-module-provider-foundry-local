@@ -183,11 +183,14 @@ class TestFoundryLocalProvider:
         # Execute completion
         response = await provider.complete(request)
 
-        # Verify the API was called with system message
+        # Verify the API was called with system message in messages array
         provider.client.chat.completions.create.assert_called_once()
         call_args = provider.client.chat.completions.create.call_args[1]
-        assert "system" in call_args
-        assert call_args["system"] == "You are a helpful assistant."
+        messages = call_args["messages"]
+        # System message should be first in messages array
+        assert len(messages) > 0
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant."
 
     def test_convert_tools_to_openai_format(self, provider):
         """Test tool conversion to OpenAI format."""

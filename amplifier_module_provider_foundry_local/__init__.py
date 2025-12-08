@@ -130,7 +130,8 @@ class FoundryLocalProvider:
         self.default_model = self.config.get("default_model", DEFAULT_MODEL)
         self.max_tokens = self.config.get("max_tokens", DEFAULT_MAX_TOKENS)
         self.temperature = self.config.get("temperature", DEFAULT_TEMPERATURE)
-        self.debug = self.config.get("debug", False)
+        self.debug = self.config.get("debug", False)  # Enable full request/response logging
+        self.raw_debug = self.config.get("raw_debug", False)  # Enable ultra-verbose raw API I/O logging
         self.debug_truncate_length = self.config.get("debug_truncate_length", DEFAULT_DEBUG_TRUNCATE_LENGTH)
         self.timeout = self.config.get("timeout", DEFAULT_TIMEOUT)
 
@@ -491,6 +492,42 @@ class FoundryLocalProvider:
                        f"tools: {len(request.tools) if request.tools else 0}, "
                        f"max_tokens: {params.get('max_tokens', 'default')}")
 
+            # Emit debug events for request
+            if self.coordinator and hasattr(self.coordinator, "hooks"):
+                # INFO level: Summary only
+                await self.coordinator.hooks.emit(
+                    "llm:request",
+                    {
+                        "provider": self.name,
+                        "model": params["model"],
+                        "message_count": len(params.get("messages", [])),
+                        "has_tools": "tools" in params,
+                        "tool_count": len(params.get("tools", [])),
+                    },
+                )
+
+                # DEBUG level: Full request with truncated values (if debug enabled)
+                if self.debug:
+                    await self.coordinator.hooks.emit(
+                        "llm:request:debug",
+                        {
+                            "lvl": "DEBUG",
+                            "provider": self.name,
+                            "request": self._truncate_values(params),
+                        },
+                    )
+
+                # RAW level: Complete params dict as sent to OpenAI API (if debug AND raw_debug enabled)
+                if self.debug and self.raw_debug:
+                    await self.coordinator.hooks.emit(
+                        "llm:request:raw",
+                        {
+                            "lvl": "DEBUG",
+                            "provider": self.name,
+                            "params": params,  # Complete untruncated params
+                        },
+                    )
+
             # Make the API call
             response = await asyncio.wait_for(
                 self.client.chat.completions.create(**params),
@@ -509,8 +546,118 @@ class FoundryLocalProvider:
 
             logger.info(f"[PROVIDER] [{request_id}] Response received in {elapsed_ms}ms")
 
-            # Emit request completion event
+            # Emit response debug events
             if self.coordinator and hasattr(self.coordinator, "hooks"):
+                # INFO level: Summary only
+                await self.coordinator.hooks.emit(
+                    "llm:response",
+                    {
+                        "provider": self.name,
+                        "model": actual_model_id,
+                        "usage": {
+                            "input": response.usage.input_tokens if response.usage else 0,
+                            "output": response.usage.output_tokens if response.usage else 0,
+                        },
+                        "status": "ok",
+                        "duration_ms": elapsed_ms,
+                    },
+                )
+
+                # DEBUG level: Full response with truncated values (if debug enabled)
+                if self.debug:
+                    # Convert response to dict for serialization
+                    response_dict = {
+                        "id": response.id if hasattr(response, "id") else None,
+                        "model": response.model,
+                        "choices": [
+                            {
+                                "index": choice.index if hasattr(choice, "index") else 0,
+                                "message": {
+                                    "role": choice.message.role if hasattr(choice.message, "role") else "assistant",
+                                    "content": choice.message.content,
+                                    "tool_calls": [
+                                        {
+                                            "id": tc.id,
+                                            "type": tc.type,
+                                            "function": {
+                                                "name": tc.function.name,
+                                                "arguments": tc.function.arguments,
+                                            },
+                                        }
+                                        for tc in (choice.message.tool_calls or [])
+                                    ] if hasattr(choice.message, "tool_calls") and choice.message.tool_calls else None,
+                                },
+                                "finish_reason": choice.finish_reason,
+                            }
+                            for choice in response.choices
+                        ],
+                        "usage": {
+                            "prompt_tokens": response.usage.prompt_tokens if response.usage and hasattr(response.usage, "prompt_tokens") else 0,
+                            "completion_tokens": response.usage.completion_tokens if response.usage and hasattr(response.usage, "completion_tokens") else 0,
+                            "total_tokens": response.usage.total_tokens if response.usage else 0,
+                        } if response.usage else None,
+                    }
+
+                    await self.coordinator.hooks.emit(
+                        "llm:response:debug",
+                        {
+                            "lvl": "DEBUG",
+                            "provider": self.name,
+                            "response": self._truncate_values(response_dict),
+                            "status": "ok",
+                            "duration_ms": elapsed_ms,
+                        },
+                    )
+
+                # RAW level: Complete response object (if debug AND raw_debug enabled)
+                if self.debug and self.raw_debug:
+                    # Use model_dump if available, otherwise convert manually
+                    if hasattr(response, "model_dump"):
+                        raw_response = response.model_dump()
+                    else:
+                        # Fallback for OpenAI SDK objects that don't have model_dump
+                        raw_response = {
+                            "id": getattr(response, "id", None),
+                            "model": response.model,
+                            "choices": [
+                                {
+                                    "index": getattr(choice, "index", 0),
+                                    "message": {
+                                        "role": getattr(choice.message, "role", "assistant"),
+                                        "content": choice.message.content,
+                                        "tool_calls": [
+                                            {
+                                                "id": tc.id,
+                                                "type": tc.type,
+                                                "function": {
+                                                    "name": tc.function.name,
+                                                    "arguments": tc.function.arguments,
+                                                },
+                                            }
+                                            for tc in (choice.message.tool_calls or [])
+                                        ] if hasattr(choice.message, "tool_calls") and choice.message.tool_calls else None,
+                                    },
+                                    "finish_reason": choice.finish_reason,
+                                }
+                                for choice in response.choices
+                            ],
+                            "usage": {
+                                "prompt_tokens": getattr(response.usage, "prompt_tokens", 0) if response.usage else 0,
+                                "completion_tokens": getattr(response.usage, "completion_tokens", 0) if response.usage else 0,
+                                "total_tokens": response.usage.total_tokens if response.usage else 0,
+                            } if response.usage else None,
+                        }
+
+                    await self.coordinator.hooks.emit(
+                        "llm:response:raw",
+                        {
+                            "lvl": "DEBUG",
+                            "provider": self.name,
+                            "response": raw_response,  # Complete untruncated response
+                        },
+                    )
+
+                # Also emit the legacy request completion event
                 await self._emit_request_complete(request_id, actual_model_id, chat_response, elapsed_ms)
 
             return chat_response
@@ -722,6 +869,36 @@ class FoundryLocalProvider:
         if not response.tool_calls:
             return []
         return response.tool_calls
+
+    def _truncate_values(self, obj: Any, max_length: int | None = None) -> Any:
+        """Recursively truncate string values in nested structures.
+
+        Preserves structure, only truncates leaf string values longer than max_length.
+        Uses self.debug_truncate_length if max_length not specified.
+
+        Args:
+            obj: Any JSON-serializable structure (dict, list, primitives)
+            max_length: Maximum string length (defaults to self.debug_truncate_length)
+
+        Returns:
+            Structure with truncated string values
+        """
+        if max_length is None:
+            max_length = self.debug_truncate_length
+
+        # Type guard: max_length is guaranteed to be int after this point
+        assert max_length is not None, "max_length should never be None after initialization"
+
+        if isinstance(obj, str):
+            if len(obj) > max_length:
+                return obj[:max_length] + f"... ({len(obj)} chars total)"
+            return obj
+        elif isinstance(obj, dict):
+            return {k: self._truncate_values(v, max_length) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._truncate_values(item, max_length) for item in obj]
+        else:
+            return obj
 
     # Enhanced helper methods for SDK integration and performance monitoring
     async def _resolve_model_with_sdk(self, model_alias: str) -> str:

@@ -120,6 +120,9 @@ This repository includes ready-to-use profiles in `examples/profiles/`:
 | `auto_hardware_optimization` | boolean | `true` | Auto-detect CPU/GPU/NPU |
 | `timeout` | float | `30.0` | Request timeout in seconds |
 | `temperature` | float | `0.7` | Sampling temperature |
+| `debug` | boolean | `false` | Enable standard debug events |
+| `raw_debug` | boolean | `false` | Enable ultra-verbose raw API I/O logging (requires `debug: true`) |
+| `debug_truncate_length` | int | `180` | Maximum string length in debug logs |
 
 ### Example Profile Configuration
 
@@ -209,8 +212,23 @@ Common models include:
 
 ### Debug Mode
 
-Enable detailed logging in your Amplifier profile:
+The provider supports multiple debug levels for troubleshooting and monitoring:
 
+#### Standard Debug (`debug: true`)
+- Emits `llm:request:debug` and `llm:response:debug` events
+- Contains request/response summaries with message counts, model info, usage stats
+- Long values automatically truncated for readability
+- Moderate log volume, suitable for development
+
+#### Raw Debug (`debug: true, raw_debug: true`)
+- Emits `llm:request:raw` and `llm:response:raw` events
+- Contains complete, unmodified request params and response objects
+- Extreme log volume, use only for deep provider integration debugging
+- Captures the exact data sent to/from Foundry Local API before any processing
+
+#### Configuration Examples
+
+**Standard Debug** (recommended for development):
 ```yaml
 providers:
   - module: provider-foundry-local
@@ -218,9 +236,21 @@ providers:
     config:
       default_model: "qwen2.5-7b-instruct-generic-gpu"
       base_url: "http://127.0.0.1:59114/v1"
-      debug: true
-      raw_debug: true
-      debug_truncate_length: 1000
+      debug: true                      # Enable debug events
+      debug_truncate_length: 180       # Truncate strings to 180 chars
+```
+
+**Raw Debug** (for deep debugging):
+```yaml
+providers:
+  - module: provider-foundry-local
+    source: git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
+    config:
+      default_model: "qwen2.5-7b-instruct-generic-gpu"
+      base_url: "http://127.0.0.1:59114/v1"
+      debug: true                      # Enable debug events
+      raw_debug: true                  # Enable raw API I/O capture
+      debug_truncate_length: 1000      # Higher limit for more context
 ```
 
 Or enable debug mode per command:
@@ -228,6 +258,14 @@ Or enable debug mode per command:
 ```bash
 amplifier run --profile foundry-standalone "Your prompt here" --debug
 ```
+
+#### Debug Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `debug` | boolean | `false` | Enable standard debug events (llm:request:debug, llm:response:debug) |
+| `raw_debug` | boolean | `false` | Enable raw API I/O logging (requires `debug: true`) |
+| `debug_truncate_length` | int | `180` | Maximum string length in debug logs (does not apply to raw_debug) |
 
 ---
 
