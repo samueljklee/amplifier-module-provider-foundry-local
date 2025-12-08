@@ -11,17 +11,15 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
 - **🛠️ Full Tool Calling**: Complete OpenAI-compatible tool calling support
 - **💰 Zero Cloud Costs**: Free inference after hardware investment
 
-## Installation
+## Quick Start
 
-### Prerequisites
+> **Note**: The provider auto-installs via Amplifier's module resolution. No manual installation needed!
 
-1. **Install Amplifier**:
+### Step 1: Install Prerequisites
+
+1. **Install UV** (required for both CLI and Playground):
    ```bash
-   # Install UV (if not already installed)
    curl -LsSf https://astral.sh/uv/install.sh | sh
-
-   # Install Amplifier
-   uv tool install git+https://github.com/microsoft/amplifier@next
    ```
 
 2. **Install Foundry Local**:
@@ -34,42 +32,74 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
    brew install foundrylocal
    ```
 
-3. **Start Foundry Local with a model**:
+### Step 2: Start Foundry and Copy Profile
+
+1. **Start Foundry Local with a model**:
    ```bash
    foundry model run qwen2.5-7b
-   # This starts Foundry Local on default port 65320
-   # Confirm it's running: http://127.0.0.1:65320/v1
+   # Output will show:
+   # 🟢 Service is Started on http://127.0.0.1:59114/, PID 34414!
+   # Downloading qwen2.5-7b-instruct-generic-gpu:4...
    ```
 
-### Install Provider
+   **⚠️ IMPORTANT**: The port number changes each time you start Foundry Local. Note your port (e.g., `59114`) - you'll need it in the next step.
+
+   The model will download on first run. Wait for download to complete before proceeding.
+
+2. **Copy and configure the profile**:
+   ```bash
+   # Create profiles directory
+   mkdir -p .amplifier/profiles
+   
+   # Copy example profile
+   cp examples/profiles/foundry-standalone.md .amplifier/profiles/
+   ```
+
+3. **Update the port** in `.amplifier/profiles/foundry-standalone.md`:
+   
+   Change the `base_url` to match your Foundry Local port:
+   ```yaml
+   providers:
+     - module: provider-foundry-local
+       config:
+         base_url: http://127.0.0.1:59114/v1  # Replace 59114 with YOUR port
+   ```
+
+### Step 3: Run It!
+
+**Option A: Amplifier CLI**
+
+1. **Install Amplifier**:
+   ```bash
+   uv tool install git+https://github.com/microsoft/amplifier@next
+   ```
+
+2. **Run the profile**:
+   ```bash
+   # Validate profile is recognized (optional)
+   amplifier profile list
+
+   # Run in chat mode
+   amplifier run --profile foundry-standalone "What model are you using?" --mode chat
+   ```
+
+**Option B: Amplifier Playground**
+
+No Amplifier CLI installation needed! Just run:
 
 ```bash
-uv add git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
+uvx --from git+https://github.com/samueljklee/amplifier-playground amplay
 ```
 
-## Quick Start with Example Profiles
+Then select `foundry-standalone` from the "Select Configuration" menu.
 
-### 🚀 Ready-to-Use Profiles
+> **Note**: The Playground uses `uvx` to run without installing Amplifier CLI.
 
-This repository includes example profiles in the `examples/profiles/` directory:
+---
 
-1. **Copy an example profile**:
-   ```bash
-   cp examples/profiles/foundry-standalone.md ~/.amplifier/profiles/
-   ```
+## Available Example Profiles
 
-2. **Install required dependencies**:
-   ```bash
-   export PATH="/Users/samule/.local/share/uv/tools/amplifier/bin:$PATH"
-   uv pip install anthropic openai
-   ```
-
-3. **Start using immediately**:
-   ```bash
-   amplifier run --profile foundry-standalone "List files in current directory" --mode single
-   ```
-
-### Available Profiles
+This repository includes ready-to-use profiles in `examples/profiles/`:
 
 - **foundry-standalone** - Comprehensive profile with all tools and 2-minute timeout
 - **foundry-minimal** - Minimal profile for simple testing
@@ -77,11 +107,21 @@ This repository includes example profiles in the `examples/profiles/` directory:
 
 📖 **See `examples/profiles/README.md` for detailed usage instructions.**
 
-## Quick Start
+---
 
-### Basic Configuration
+## Configuration Reference
 
-Add to your Amplifier profile:
+### Provider Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `default_model` | string | `"qwen2.5-7b-instruct-generic-gpu"` | Primary model to use (use exact ID from `foundry model list`) |
+| `base_url` | string | `"http://127.0.0.1:[PORT]/v1"` | Foundry Local endpoint (port changes each run) |
+| `auto_hardware_optimization` | boolean | `true` | Auto-detect CPU/GPU/NPU |
+| `timeout` | float | `30.0` | Request timeout in seconds |
+| `temperature` | float | `0.7` | Sampling temperature |
+
+### Example Profile Configuration
 
 ```yaml
 providers:
@@ -90,67 +130,12 @@ providers:
     config:
       default_model: "qwen2.5-7b-instruct-generic-gpu"
       auto_hardware_optimization: true
-      base_url: "http://127.0.0.1:65320/v1"
+      base_url: "http://127.0.0.1:59114/v1"  # Use YOUR port here
       timeout: 30
       temperature: 0.7
 ```
 
-### Usage Example
-
-```python
-from amplifier_core import AmplifierSession
-
-config = {
-    "session": {"orchestrator": "loop-basic"},
-    "providers": [{
-        "module": "provider-foundry-local",
-        "source": "git+https://github.com/microsoft/amplifier-module-provider-foundry-local@main",
-        "config": {
-            "default_model": "qwen2.5-7b-instruct-generic-gpu",
-            "auto_hardware_optimization": True
-        }
-    }],
-    "tools": [{"module": "tool-filesystem"}]
-}
-
-async with AmplifierSession(config=config) as session:
-    response = await session.execute(
-        "List the files in the current directory and explain what each contains."
-    )
-    print(response)
-```
-
-### Verification
-
-To verify your installation is working correctly:
-
-1. **Check Foundry Local is running**:
-   ```bash
-   curl http://127.0.0.1:65320/v1/models
-   # Should return a JSON list of available models
-   ```
-
-2. **Test provider connection**:
-   ```bash
-   amplifier run --profile foundry-minimal "What model are you using?" --mode chat
-   # Should respond with the Foundry Local model name
-   ```
-
-3. **Check provider logs**:
-   Look for these success indicators in the output:
-   - `✅ Using configured Foundry Local endpoint: http://127.0.0.1:65320/v1`
-   - `✅ Foundry Local endpoint is reachable`
-   - `✅ Found valid model: [model-name]`
-
-## Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `default_model` | string | `"qwen2.5-7b-instruct-generic-gpu"` | Primary model to use (use exact ID from `foundry model list`) |
-| `base_url` | string | `"http://127.0.0.1:65320/v1"` | Foundry Local endpoint |
-| `auto_hardware_optimization` | boolean | `true` | Auto-detect CPU/GPU/NPU |
-| `timeout` | float | `30.0` | Request timeout in seconds |
-| `temperature` | float | `0.7` | Sampling temperature |
+---
 
 ## Available Models
 
@@ -170,26 +155,7 @@ Common models include:
 
 **For the complete and up-to-date model list, see the [Foundry Local CLI Reference](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/reference/reference-cli?view=foundry-classic)**
 
-## Privacy Use Cases
-
-Perfect for scenarios where data privacy is critical:
-
-- **Healthcare**: HIPAA-compliant processing of patient data
-- **Legal**: Attorney-client privileged document analysis
-- **Finance**: PCI-DSS compliant financial data processing
-- **Government**: Classified document processing
-- **Edge Computing**: Field operations with no internet connectivity
-
-## Hardware Optimization
-
-Foundry Local automatically detects and optimizes for available hardware:
-- **NVIDIA GPUs**: CUDA-optimized models
-- **AMD GPUs**: ROCm-optimized models
-- **Intel NPUs**: NPU-accelerated models
-- **Apple Silicon**: Metal-optimized models
-- **CPU**: CPU-optimized models (fallback)
-
-For detailed hardware optimization guidance, see the [Foundry Local CLI Reference](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/reference/reference-cli?view=foundry-classic).
+---
 
 ## Troubleshooting
 
@@ -215,6 +181,32 @@ For detailed hardware optimization guidance, see the [Foundry Local CLI Referenc
    rocm-smi   # AMD
    ```
 
+4. **"No module named 'anthropic'" or similar module errors** (Amplifier CLI only):
+   
+   This typically occurs when running Amplifier CLI. Install missing dependencies in Amplifier's environment:
+   
+   ```bash
+   # Activate the Amplifier environment
+   source $(uv tool dir)/amplifier/bin/activate
+   
+   # Install required packages
+   uv pip install anthropic openai
+   ```
+   
+   The full error looks like:
+   ```
+   Failed to load module 'provider-anthropic': Module 'provider-anthropic' failed validation: 
+   FAILED: 0/1 checks passed (1 errors, 0 warnings). 
+   Errors: module_importable: Failed to import module: No module named 'anthropic'
+   ```
+   
+   **Note**: This issue is specific to Amplifier CLI. The Amplifier Playground typically doesn't encounter this error.
+
+5. **Can't connect to Foundry Local**:
+   - Verify Foundry is running: `curl http://127.0.0.1:[YOUR_PORT]/v1/models`
+   - Check you're using the correct port from the Foundry startup output
+   - Ensure the model finished downloading
+
 ### Debug Mode
 
 Enable detailed logging in your Amplifier profile:
@@ -224,8 +216,8 @@ providers:
   - module: provider-foundry-local
     source: git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
     config:
-      default_model: "qwen2.5-7b"
-      base_url: "http://127.0.0.1:65320/v1"
+      default_model: "qwen2.5-7b-instruct-generic-gpu"
+      base_url: "http://127.0.0.1:59114/v1"
       debug: true
       raw_debug: true
       debug_truncate_length: 1000
@@ -234,10 +226,40 @@ providers:
 Or enable debug mode per command:
 
 ```bash
-amplifier run --profile foundry-minimal "Your prompt here" --debug
+amplifier run --profile foundry-standalone "Your prompt here" --debug
 ```
 
-## Development
+---
+
+## Advanced Usage
+
+### Python API
+
+For programmatic usage outside of profiles:
+
+```python
+from amplifier_core import AmplifierSession
+
+config = {
+    "session": {"orchestrator": "loop-basic"},
+    "providers": [{
+        "module": "provider-foundry-local",
+        "source": "git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main",
+        "config": {
+            "default_model": "qwen2.5-7b-instruct-generic-gpu",
+            "auto_hardware_optimization": True,
+            "base_url": "http://127.0.0.1:59114/v1"  # Use YOUR port
+        }
+    }],
+    "tools": [{"module": "tool-filesystem"}]
+}
+
+async with AmplifierSession(config=config) as session:
+    response = await session.execute(
+        "List the files in the current directory and explain what each contains."
+    )
+    print(response)
+```
 
 ### Local Development
 
@@ -250,8 +272,35 @@ cd amplifier-module-provider-foundry-local
 uv add -e .
 
 # Test with Amplifier
-amplifier run --profile foundry-minimal "Hello, Foundry Local!"
+amplifier run --profile foundry-standalone "Hello, Foundry Local!"
 ```
+
+---
+
+## Reference
+
+### Privacy Use Cases
+
+Perfect for scenarios where data privacy is critical:
+
+- **Healthcare**: HIPAA-compliant processing of patient data
+- **Legal**: Attorney-client privileged document analysis
+- **Finance**: PCI-DSS compliant financial data processing
+- **Government**: Classified document processing
+- **Edge Computing**: Field operations with no internet connectivity
+
+### Hardware Optimization
+
+Foundry Local automatically detects and optimizes for available hardware:
+- **NVIDIA GPUs**: CUDA-optimized models
+- **AMD GPUs**: ROCm-optimized models
+- **Intel NPUs**: NPU-accelerated models
+- **Apple Silicon**: Metal-optimized models
+- **CPU**: CPU-optimized models (fallback)
+
+For detailed hardware optimization guidance, see the [Foundry Local CLI Reference](https://learn.microsoft.com/en-us/azure/ai-foundry/foundry-local/reference/reference-cli?view=foundry-classic).
+
+---
 
 ## Contributing
 
