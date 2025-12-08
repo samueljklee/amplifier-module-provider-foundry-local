@@ -47,6 +47,36 @@ This provider integrates Microsoft Foundry Local with Amplifier, enabling:
 uv add git+https://github.com/samueljklee/amplifier-module-provider-foundry-local@main
 ```
 
+## Quick Start with Example Profiles
+
+### 🚀 Ready-to-Use Profiles
+
+This repository includes example profiles in the `examples/profiles/` directory:
+
+1. **Copy an example profile**:
+   ```bash
+   cp examples/profiles/foundry-standalone.md ~/.amplifier/profiles/
+   ```
+
+2. **Install required dependencies**:
+   ```bash
+   export PATH="/Users/samule/.local/share/uv/tools/amplifier/bin:$PATH"
+   uv pip install anthropic openai
+   ```
+
+3. **Start using immediately**:
+   ```bash
+   amplifier run --profile foundry-standalone "List files in current directory" --mode single
+   ```
+
+### Available Profiles
+
+- **foundry-standalone** - Comprehensive profile with all tools and 2-minute timeout
+- **foundry-minimal** - Minimal profile for simple testing
+- **foundry-tools-focused** - Development-focused with essential tools
+
+📖 **See `examples/profiles/README.md` for detailed usage instructions.**
+
 ## Quick Start
 
 ### Basic Configuration
